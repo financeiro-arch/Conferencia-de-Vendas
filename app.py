@@ -70,7 +70,7 @@ if uploaded_file1 and uploaded_file2:
 
             if export == "Excel com cores":
                 output = BytesIO()
-                df2.to_excel(output, index=False, sheet_name="Resultado")
+                df2.to_excel(output, index=False, sheet_name="Extrato Validado")
                 output.seek(0)
 
                 wb = load_workbook(filename=output)
@@ -99,9 +99,9 @@ if uploaded_file1 and uploaded_file2:
                 final_output.seek(0)
 
                 st.download_button(
-                    "⬇️ Baixar Resultado em Excel",
+                    "⬇️ Baixar Extrato Validado",
                     final_output,
-                    file_name="resultado_conferencia.xlsx",
+                    file_name="extrato_validado.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
