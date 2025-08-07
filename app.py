@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 from io import BytesIO
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
 
 st.set_page_config(page_title="Conferência de Vendas - Grupo Óticas Visão", page_icon="📊")
 
@@ -11,8 +13,8 @@ st.markdown("---")
 st.markdown("Envie as duas planilhas para validar as vendas com base nos campos:")
 st.markdown("- Código NSU\n- Código de Autorização\n- Código da Venda")
 
-uploaded_file1 = st.file_uploader("📎 Enviar Planilha 1 (Ex: PagSeguro)", type=["csv", "xlsx"], key="file1")
-uploaded_file2 = st.file_uploader("📎 Enviar Planilha 2 (Ex: Extrato)", type=["csv", "xlsx"], key="file2")
+uploaded_file1 = st.file_uploader("📎 Enviar Planilha 1 (Ex: PagSeguro ou REDE)", type=["csv", "xlsx"], key="file1")
+uploaded_file2 = st.file_uploader("📎 Enviar Planilha 2 (Ex: Extrato de Vendas)", type=["csv", "xlsx"], key="file2")
 
 if uploaded_file1 and uploaded_file2:
     def read_file(uploaded_file):
@@ -31,30 +33,60 @@ if uploaded_file1 and uploaded_file2:
         with st.expander("📗 Planilha 2"):
             st.dataframe(df2.head())
 
-        # Normaliza nomes de colunas
         df1.columns = df1.columns.str.strip()
         df2.columns = df2.columns.str.strip()
 
         chaves = ["Código NSU", "Codigo de Autorizacao", "Código da Venda"]
 
         if all(col in df1.columns for col in chaves) and all(col in df2.columns for col in chaves):
-            conferidas = df1.merge(df2, on=chaves, how="inner")
 
-            st.success(f"🔍 Foram encontradas {len(conferidas)} vendas conferidas!")
-            st.dataframe(conferidas)
+            df2['Status Conferência'] = df2.apply(
+                lambda row: "Conferido" if ((df1[chaves] == row[chaves]).all(axis=1).any()) else "Erro",
+                axis=1
+            )
 
-            # Exportação
-            export = st.radio("Exportar resultado como:", ["Excel", "CSV"], horizontal=True)
+            st.success("✅ Conferência finalizada!")
+            st.dataframe(df2)
 
-            if export == "Excel":
+            export = st.radio("Exportar resultado como:", ["Excel com cores"], horizontal=True)
+
+            if export == "Excel com cores":
                 output = BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    conferidas.to_excel(writer, index=False)
-                st.download_button("⬇️ Baixar Excel", output.getvalue(), file_name="conferidas.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                df2.to_excel(output, index=False, sheet_name="Resultado")
+                output.seek(0)
 
-            elif export == "CSV":
-                csv = conferidas.to_csv(index=False).encode("utf-8")
-                st.download_button("⬇️ Baixar CSV", csv, file_name="conferidas.csv", mime="text/csv")
+                # Reabrir para aplicar sombreamento
+                wb = load_workbook(filename=output)
+                ws = wb.active
+
+                status_col_idx = None
+                for idx, cell in enumerate(ws[1], start=1):
+                    if cell.value == "Status Conferência":
+                        status_col_idx = idx
+                        break
+
+                green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+
+                for row in ws.iter_rows(min_row=2, min_col=1, max_col=ws.max_column):
+                    status_cell = row[status_col_idx - 1]
+                    if status_cell.value == "Conferido":
+                        for cell in row:
+                            cell.fill = green_fill
+                    elif status_cell.value == "Erro":
+                        for cell in row:
+                            cell.fill = red_fill
+
+                final_output = BytesIO()
+                wb.save(final_output)
+                final_output.seek(0)
+
+                st.download_button(
+                    "⬇️ Baixar Resultado em Excel",
+                    final_output,
+                    file_name="resultado_conferencia.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
 
         else:
             st.error("❌ As colunas obrigatórias não foram encontradas em ambas as planilhas. Verifique os nomes:")
