@@ -11,7 +11,7 @@ st.subheader("Grupo Óticas Visão")
 
 st.markdown("---")
 st.markdown("Envie as duas planilhas para validar as vendas com base nos campos:")
-st.markdown("- Código NSU\n- Código de Autorização\n- Código da Venda")
+st.markdown("- Código NSU\n- Código de Autorização\n- Código da Venda\n- Data\n- Valor\n- Loja")
 
 uploaded_file1 = st.file_uploader("📎 Enviar Planilha 1 (Ex: PagSeguro ou REDE)", type=["csv", "xlsx"], key="file1")
 uploaded_file2 = st.file_uploader("📎 Enviar Planilha 2 (Ex: Extrato de Vendas)", type=["csv", "xlsx"], key="file2")
@@ -23,6 +23,24 @@ if uploaded_file1 and uploaded_file2:
         else:
             return pd.read_csv(uploaded_file, dtype=str)
 
+    def normalizar_colunas(df):
+        df.columns = df.columns.str.strip().str.lower()
+        renomear = {}
+        for col in df.columns:
+            if "nsu" in col:
+                renomear[col] = "codigo nsu"
+            elif "autoriz" in col:
+                renomear[col] = "codigo de autorizacao"
+            elif "venda" in col:
+                renomear[col] = "codigo da venda"
+            elif "data" in col:
+                renomear[col] = "data"
+            elif "valor" in col:
+                renomear[col] = "valor"
+            elif "loja" in col:
+                renomear[col] = "loja"
+        return df.rename(columns=renomear)
+
     try:
         df1 = read_file(uploaded_file1)
         df2 = read_file(uploaded_file2)
@@ -33,10 +51,10 @@ if uploaded_file1 and uploaded_file2:
         with st.expander("📗 Planilha 2"):
             st.dataframe(df2.head())
 
-        df1.columns = df1.columns.str.strip()
-        df2.columns = df2.columns.str.strip()
+        df1 = normalizar_colunas(df1)
+        df2 = normalizar_colunas(df2)
 
-        chaves = ["Código NSU", "Codigo de Autorizacao", "Código da Venda"]
+        chaves = ["codigo nsu", "codigo de autorizacao", "codigo da venda", "data", "valor", "loja"]
 
         if all(col in df1.columns for col in chaves) and all(col in df2.columns for col in chaves):
 
@@ -55,7 +73,6 @@ if uploaded_file1 and uploaded_file2:
                 df2.to_excel(output, index=False, sheet_name="Resultado")
                 output.seek(0)
 
-                # Reabrir para aplicar sombreamento
                 wb = load_workbook(filename=output)
                 ws = wb.active
 
@@ -89,7 +106,7 @@ if uploaded_file1 and uploaded_file2:
                 )
 
         else:
-            st.error("❌ As colunas obrigatórias não foram encontradas em ambas as planilhas. Verifique os nomes:")
+            st.error("❌ As colunas obrigatórias não foram encontradas em ambas as planilhas. Mesmo após tentativa de normalização.")
             st.code("\n".join(chaves))
 
     except Exception as e:
