@@ -31,13 +31,13 @@ if uploaded_file1 and uploaded_file2:
                 renomear[col] = "codigo nsu"
             elif "autoriz" in col:
                 renomear[col] = "codigo de autorizacao"
-            elif "venda" in col:
+            elif "venda" in col and "codigo" in col:
                 renomear[col] = "codigo da venda"
-            elif "data" in col:
+            elif any(term in col for term in ["data", "emissao"]):
                 renomear[col] = "data"
-            elif "valor" in col:
+            elif any(term in col for term in ["valor", "bruto"]):
                 renomear[col] = "valor"
-            elif "loja" in col:
+            elif any(term in col for term in ["loja", "local"]):
                 renomear[col] = "loja"
         return df.rename(columns=renomear)
 
