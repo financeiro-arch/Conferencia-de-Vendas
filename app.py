@@ -1,104 +1,76 @@
-import streamlit as st
 import pandas as pd
-from io import BytesIO
+from difflib import get_close_matches
 
-st.set_page_config(page_title="Validador de Vendas", layout="wide")
-
-st.title("🔍 Sistema de Conferência de Vendas - Grupo Óticas Visão")
-
-st.markdown("Faça o upload das planilhas para validar e gerar um extrato conferido.")
-
-uploaded_rede = st.file_uploader("📄 Envie a planilha REDE 2025", type=["xlsx"], key="rede")
-uploaded_pagseguro = st.file_uploader("📄 Envie a planilha PAGSEGURO 2025", type=["xlsx"], key="pagseguro")
-uploaded_extrato = st.file_uploader("📄 Envie a planilha Extrato de Vendas 2025", type=["xlsx"], key="extrato")
-
-# Mapeamento de colunas para padronização
-column_mapping = {
-    "codigo_nsu": ["NSU/CV", "Código NSU", "Cód. NSU"],
-    "codigo_autorizacao": ["numero da autorizaçao (Auto)", "Código de Autorização", "Codigo de Autorizacao", "AUTORIZACAO"],
-    "codigo_venda": ["numero do pedido", "Código da Venda", "AUTVENDA"],
-    "data": ["data da venda", "Data da Transação", "EMISSÃO"],
-    "valor": ["valor da venda original", "Valor Bruto", "VALOR"],
-    "loja": ["LOJA", "loja", "LOCAL"]
+# Mapeamento de nomes semelhantes
+mapa_colunas = {
+    'codigo da venda': ['código da venda', 'cod venda', 'codigo venda'],
+    'nsu': ['nsu', 'código nsu', 'código', 'cod nsu'],
+    'autorizacao': ['codigo de autorizacao', 'autorização', 'autorizacao'],
+    'data': ['data', 'data da venda', 'emissão', 'data da transação'],
+    'valor': ['valor', 'valor bruto', 'valor venda', 'valor original', 'valor da venda'],
+    'loja': ['loja', 'local', 'nome loja']
 }
 
-required_cols = list(column_mapping.keys())
-
-def normalize_columns(df):
-    df_copy = df.copy()
-    new_columns = {}
-    for logical_name, aliases in column_mapping.items():
-        for col in df_copy.columns:
-            if col.strip().lower() in [a.lower() for a in aliases]:
-                new_columns[col] = logical_name
+# Função para normalizar os nomes
+def normalizar_colunas(df):
+    novas_colunas = {}
+    for col in df.columns:
+        col_norm = col.strip().lower()
+        for chave, similares in mapa_colunas.items():
+            if col_norm in similares or get_close_matches(col_norm, similares):
+                novas_colunas[col] = chave
                 break
-    df_copy = df_copy.rename(columns=new_columns)
-    return df_copy
+    df = df.rename(columns=novas_colunas)
+    return df
 
-def conferir_linha(linha, vendas_df):
-    filtro = (
-        (vendas_df["codigo_nsu"] == linha["codigo_nsu"]) &
-        (vendas_df["codigo_autorizacao"] == linha["codigo_autorizacao"]) &
-        (vendas_df["codigo_venda"] == linha["codigo_venda"]) &
-        (vendas_df["data"] == linha["data"]) &
-        (vendas_df["valor"] == linha["valor"]) &
-        (vendas_df["loja"] == linha["loja"])
-    )
-    return "Conferido" if vendas_df[filtro].shape[0] > 0 else "Erro"
+# Função principal de conferência
+def conferir_vendas(arquivo_extrato, arquivo_pagseguro, arquivo_rede):
+    extrato = pd.read_excel(arquivo_extrato)
+    pagseguro = pd.read_excel(arquivo_pagseguro)
+    rede = pd.read_excel(arquivo_rede)
 
-def gerar_excel_colorido(df):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        df.to_excel(writer, index=False, sheet_name="Extrato Conferido")
-        workbook = writer.book
-        worksheet = writer.sheets["Extrato Conferido"]
+    extrato = normalizar_colunas(extrato)
+    pagseguro = normalizar_colunas(pagseguro)
+    rede = normalizar_colunas(rede)
 
-        verde = workbook.add_format({"bg_color": "#C6EFCE"})
-        vermelho = workbook.add_format({"bg_color": "#FFC7CE"})
+    extrato['status'] = 'Erro'
 
-        status_col = df.columns.get_loc("Status Conferência")
+    # Conferência por data, valor e loja
+    for idx, linha in extrato.iterrows():
+        data = linha.get('data')
+        valor = linha.get('valor')
+        loja = linha.get('loja')
 
-        for row_num, status in enumerate(df["Status Conferência"], start=1):
-            formato = verde if status == "Conferido" else vermelho
-            worksheet.set_row(row_num, cell_format=formato)
+        match_pag = pagseguro[
+            (pagseguro['data'] == data) &
+            (pagseguro['valor'] == valor) &
+            (pagseguro['loja'] == loja)
+        ]
+        match_rede = rede[
+            (rede['data'] == data) &
+            (rede['valor'] == valor) &
+            (rede['loja'] == loja)
+        ]
 
-    output.seek(0)
-    return output
+        if not match_pag.empty or not match_rede.empty:
+            extrato.at[idx, 'status'] = 'Conferido'
 
-if uploaded_rede and uploaded_pagseguro and uploaded_extrato:
-    with st.spinner("Processando arquivos..."):
+    # Salva a planilha com sombreamento colorido
+    writer = pd.ExcelWriter('Extrato_Validado.xlsx', engine='xlsxwriter')
+    extrato.to_excel(writer, index=False, sheet_name='Conferência')
+    workbook = writer.book
+    worksheet = writer.sheets['Conferência']
 
-        # Leitura e normalização
-        extrato_df = normalize_columns(pd.read_excel(uploaded_extrato, dtype=str))
-        rede_df = normalize_columns(pd.read_excel(uploaded_rede, dtype=str))
-        
-        pagseguro_xls = pd.ExcelFile(uploaded_pagseguro)
-        pagseguro_df = pd.concat(
-            [normalize_columns(pd.read_excel(uploaded_pagseguro, sheet_name=s, dtype=str)) for s in pagseguro_xls.sheet_names],
-            ignore_index=True
-        )
+    format_verde = workbook.add_format({'bg_color': '#C6EFCE'})
+    format_vermelho = workbook.add_format({'bg_color': '#FFC7CE'})
 
-        # Combinar REDE + PAGSEGURO
-        vendas_df = pd.concat([rede_df, pagseguro_df], ignore_index=True)
+    for row in range(1, len(extrato) + 1):
+        status = extrato.loc[row - 1, 'status']
+        fmt = format_verde if status == 'Conferido' else format_vermelho
+        worksheet.set_row(row, None, fmt)
 
-        # Verificar colunas mínimas
-        if not all(col in extrato_df.columns for col in required_cols):
-            st.error("❌ A planilha de Extrato não contém todas as colunas obrigatórias.")
-        elif not all(col in vendas_df.columns for col in required_cols):
-            st.error("❌ As planilhas de vendas não contêm todas as colunas obrigatórias.")
-        else:
-            # Conferir
-            extrato_df["Status Conferência"] = extrato_df.apply(lambda row: conferir_linha(row, vendas_df), axis=1)
-            output_file = gerar_excel_colorido(extrato_df)
+    writer.close()
+    print("✅ Planilha 'Extrato_Validado.xlsx' criada com sucesso!")
 
-            st.success("✅ Conferência finalizada com sucesso!")
-            st.dataframe(extrato_df)
-
-            st.download_button(
-                label="⬇️ Baixar Extrato Conferido (Excel)",
-                data=output_file,
-                file_name="Extrato_Conferido.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-else:
-    st.info("📥 Envie todos os arquivos para iniciar a conferência.")
+# Use os nomes dos arquivos reais aqui
+conferir_vendas('ExtratoVendas 2025.xlsx', 'PAGSEGURO 2025.xlsx', 'REDE 2025.xlsx')
