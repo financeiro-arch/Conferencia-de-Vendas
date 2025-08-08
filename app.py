@@ -88,7 +88,7 @@ if extrato_file and (pagseguro_file or rede_file):
     output = exportar_excel(df_resultado)
 
     st.download_button(
-        label="📥 Baixar Resultado em Excel",
+        label="📅 Baixar Resultado em Excel",
         data=output,
         file_name="Extrato_Conferido.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
